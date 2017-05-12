@@ -63,7 +63,7 @@ using namespace std;
 namespace ORB_SLAM2
 {
 
-
+//构造函数
 PnPsolver::PnPsolver(const Frame &F, const vector<MapPoint*> &vpMapPointMatches):
     pws(0), us(0), alphas(0), pcs(0), maximum_number_of_correspondences(0), number_of_correspondences(0), mnInliersi(0),
     mnIterations(0), mnBestInliers(0), N(0)
@@ -76,22 +76,26 @@ PnPsolver::PnPsolver(const Frame &F, const vector<MapPoint*> &vpMapPointMatches)
     mvAllIndices.reserve(F.mvpMapPoints.size());
 
     int idx=0;
+	//匹配上的点
     for(size_t i=0, iend=vpMapPointMatches.size(); i<iend; i++)
     {
         MapPoint* pMP = vpMapPointMatches[i];
 
         if(pMP)
         {
+			//好点
             if(!pMP->isBad())
             {
                 const cv::KeyPoint &kp = F.mvKeysUn[i];
 
+				//记下坐标
                 mvP2D.push_back(kp.pt);
+				//mvsigma2和误差标准有关，具体不清楚
                 mvSigma2.push_back(F.mvLevelSigma2[kp.octave]);
-
+				//记下其世界坐标，从mat转point3f
                 cv::Mat Pos = pMP->GetWorldPos();
                 mvP3Dw.push_back(cv::Point3f(Pos.at<float>(0),Pos.at<float>(1), Pos.at<float>(2)));
-
+				//记住好点来自原来第i个点，同时是所有好点里的第idx个
                 mvKeyPointIndices.push_back(i);
                 mvAllIndices.push_back(idx);               
 
@@ -117,7 +121,7 @@ PnPsolver::~PnPsolver()
   delete [] pcs;
 }
 
-
+//设置ransac参数，有默认值
 void PnPsolver::SetRansacParameters(double probability, int minInliers, int maxIterations, int minSet, float epsilon, float th2)
 {
     mRansacProb = probability;
@@ -156,20 +160,26 @@ void PnPsolver::SetRansacParameters(double probability, int minInliers, int maxI
         mvMaxError[i] = mvSigma2[i]*th2;
 }
 
+//iterate函数入口，从这里进入用默认的最大迭代次数
 cv::Mat PnPsolver::find(vector<bool> &vbInliers, int &nInliers)
 {
     bool bFlag;
+	//输入最大迭代次数，希望从函数获得一个flag表示，一组flag对应值是否在内群里，内群数
     return iterate(mRansacMaxIts,bFlag,vbInliers,nInliers);    
 }
 
+//ransac算法计算三维点投影模型
 cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInliers, int &nInliers)
 {
+	//初始化需要从函数获取信息的进来的变量
     bNoMore = false;
     vbInliers.clear();
     nInliers=0;
 
+	//根据最小进行ransac算法的子集初始化参考点计算空间
     set_maximum_number_of_correspondences(mRansacMinSet);
 
+	//N是参考点数目,参考点数目太少则返回
     if(N<mRansacMinInliers)
     {
         bNoMore = true;
@@ -179,6 +189,7 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
     vector<size_t> vAvailableIndices;
 
     int nCurrentIterations = 0;
+	//若从find进来，两个右边的参考值一样的，迭代次数取大值
     while(mnIterations<mRansacMaxIts || nCurrentIterations<nIterations)
     {
         nCurrentIterations++;
@@ -187,7 +198,7 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
 
         vAvailableIndices = mvAllIndices;
 
-        // Get min set of points
+        // Get min set of points，随机抽取这次迭代使用的参考点
         for(short i = 0; i < mRansacMinSet; ++i)
         {
             int randi = DUtils::Random::RandomInt(0, vAvailableIndices.size()-1);
@@ -196,16 +207,18 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
 
             add_correspondence(mvP3Dw[idx].x,mvP3Dw[idx].y,mvP3Dw[idx].z,mvP2D[idx].x,mvP2D[idx].y);
 
+			//实质是踢掉取出来的值
             vAvailableIndices[randi] = vAvailableIndices.back();
             vAvailableIndices.pop_back();
         }
 
-        // Compute camera pose
+        // Compute camera pose，并把R和t放进两个参数里
         compute_pose(mRi, mti);
 
         // Check inliers
         CheckInliers();
 
+		//若找到的内群数目达标了
         if(mnInliersi>=mRansacMinInliers)
         {
             // If it is the best solution so far, save it
@@ -223,6 +236,7 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
                 tcw.copyTo(mBestTcw.rowRange(0,3).col(3));
             }
 
+			//用当前筛选过的内群集再计算pose，若比当前结果更好则认为是最好的拟合可以跳出循环
             if(Refine())
             {
                 nInliers = mnRefinedInliers;
@@ -238,9 +252,11 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
         }
     }
 
+	//迭代次数达到最大限制
     if(mnIterations>=mRansacMaxIts)
     {
         bNoMore=true;
+		//若内群元素数目大于最低限制，也认为这个拟合最好
         if(mnBestInliers>=mRansacMinInliers)
         {
             nInliers=mnBestInliers;
@@ -257,11 +273,13 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
     return cv::Mat();
 }
 
+//用当前最好的内群的所有参考点进行计算pose，若结果比目前有的更好，那认为这就是最好的拟合了
 bool PnPsolver::Refine()
 {
     vector<int> vIndices;
     vIndices.reserve(mvbBestInliers.size());
 
+	//当前最好的内群取出
     for(size_t i=0; i<mvbBestInliers.size(); i++)
     {
         if(mvbBestInliers[i])
@@ -304,7 +322,7 @@ bool PnPsolver::Refine()
     return false;
 }
 
-
+//判断有哪些点是在拟合允许误差范围
 void PnPsolver::CheckInliers()
 {
     mnInliersi=0;
@@ -338,7 +356,7 @@ void PnPsolver::CheckInliers()
     }
 }
 
-
+//初始化必要的数组
 void PnPsolver::set_maximum_number_of_correspondences(int n)
 {
   if (maximum_number_of_correspondences < n) {
@@ -372,9 +390,10 @@ void PnPsolver::add_correspondence(double X, double Y, double Z, double u, doubl
   number_of_correspondences++;
 }
 
+//选择控制点
 void PnPsolver::choose_control_points(void)
 {
-  // Take C0 as the reference points centroid:
+  // Take C0 as the reference points centroid:C0求法是所有参考点坐标的平均值
   cws[0][0] = cws[0][1] = cws[0][2] = 0;
   for(int i = 0; i < number_of_correspondences; i++)
     for(int j = 0; j < 3; j++)
@@ -392,15 +411,19 @@ void PnPsolver::choose_control_points(void)
   CvMat DC      = cvMat(3, 1, CV_64F, dc);
   CvMat UCt     = cvMat(3, 3, CV_64F, uct);
 
+  //计算参考点坐标和控制点0的差放在PW0
   for(int i = 0; i < number_of_correspondences; i++)
     for(int j = 0; j < 3; j++)
       PW0->data.db[3 * i + j] = pws[3 * i + j] - cws[0][j];
 
+  //计算矩阵PW0与其转置的乘积，得到3*3矩阵，类似求与三个控制点各个坐标的方差放PW0tPW0
   cvMulTransposed(PW0, &PW0tPW0, 1);
+  //奇异值分解，按顺序输入矩阵A、s、u、v，A=us(v转置),s是对角阵但是用向量存放
   cvSVD(&PW0tPW0, &DC, &UCt, 0, CV_SVD_MODIFY_A | CV_SVD_U_T);
 
   cvReleaseMat(&PW0);
 
+  //这个不明白
   for(int i = 1; i < 4; i++) {
     double k = sqrt(dc[i - 1] / number_of_correspondences);
     for(int j = 0; j < 3; j++)
@@ -408,18 +431,22 @@ void PnPsolver::choose_control_points(void)
   }
 }
 
+//计算重心坐标alpha
 void PnPsolver::compute_barycentric_coordinates(void)
 {
   double cc[3 * 3], cc_inv[3 * 3];
   CvMat CC     = cvMat(3, 3, CV_64F, cc);
   CvMat CC_inv = cvMat(3, 3, CV_64F, cc_inv);
 
+  //计算各个控制点与控制点0的差，即获得各个向量基
   for(int i = 0; i < 3; i++)
     for(int j = 1; j < 4; j++)
       cc[3 * i + j - 1] = cws[j][i] - cws[0][i];
 
+  //求逆
   cvInvert(&CC, &CC_inv, CV_SVD);
   double * ci = cc_inv;
+  //求得alpha，具体原理文档重心坐标有说明
   for(int i = 0; i < number_of_correspondences; i++) {
     double * pi = pws + 3 * i;
     double * a = alphas + 4 * i;
@@ -433,6 +460,7 @@ void PnPsolver::compute_barycentric_coordinates(void)
   }
 }
 
+//生成M
 void PnPsolver::fill_M(CvMat * M,
 		  const int row, const double * as, const double u, const double v)
 {
@@ -450,6 +478,7 @@ void PnPsolver::fill_M(CvMat * M,
   }
 }
 
+//计算控制点在相机坐标系的坐标
 void PnPsolver::compute_ccs(const double * betas, const double * ut)
 {
   for(int i = 0; i < 4; i++)
@@ -463,6 +492,7 @@ void PnPsolver::compute_ccs(const double * betas, const double * ut)
   }
 }
 
+//计算参考点在相机坐标系的坐标
 void PnPsolver::compute_pcs(void)
 {
   for(int i = 0; i < number_of_correspondences; i++) {
@@ -474,11 +504,15 @@ void PnPsolver::compute_pcs(void)
   }
 }
 
+//计算姿态
 double PnPsolver::compute_pose(double R[3][3], double t[3])
 {
+	//找出控制点
   choose_control_points();
+  //计算alpha
   compute_barycentric_coordinates();
 
+  //文档里的M
   CvMat * M = cvCreateMat(2 * number_of_correspondences, 12, CV_64F);
 
   for(int i = 0; i < number_of_correspondences; i++)
@@ -489,6 +523,7 @@ double PnPsolver::compute_pose(double R[3][3], double t[3])
   CvMat D   = cvMat(12,  1, CV_64F, d);
   CvMat Ut  = cvMat(12, 12, CV_64F, ut);
 
+  //按文档说明求M的右奇异矩阵，但是这里只拿了左奇异矩阵，因为MtM是对称的，所以左奇异右奇异一样
   cvMulTransposed(M, &MtM, 1);
   cvSVD(&MtM, &D, &Ut, 0, CV_SVD_MODIFY_A | CV_SVD_U_T);
   cvReleaseMat(&M);
@@ -497,12 +532,15 @@ double PnPsolver::compute_pose(double R[3][3], double t[3])
   CvMat L_6x10 = cvMat(6, 10, CV_64F, l_6x10);
   CvMat Rho    = cvMat(6,  1, CV_64F, rho);
 
+  //l_6x10就是和奇异矩阵相关的β的系数矩阵
   compute_L_6x10(ut, l_6x10);
+  //rho就是放||cws[i]-cws[j]||^2的向量
   compute_rho(rho);
 
   double Betas[4][4], rep_errors[4];
   double Rs[4][3][3], ts[4][3];
 
+  //这里应该对应文档N=1，2，3，4计算β，但是从各个函数来看，1没有了，下面分别是4，2，3
   find_betas_approx_1(&L_6x10, &Rho, Betas[1]);
   gauss_newton(&L_6x10, &Rho, Betas[1]);
   rep_errors[1] = compute_R_and_t(ut, Betas[1], Rs[1], ts[1]);
@@ -534,6 +572,7 @@ void PnPsolver::copy_R_and_t(const double R_src[3][3], const double t_src[3],
   }
 }
 
+//两点距离的平方
 double PnPsolver::dist2(const double * p1, const double * p2)
 {
   return
@@ -542,11 +581,13 @@ double PnPsolver::dist2(const double * p1, const double * p2)
     (p1[2] - p2[2]) * (p1[2] - p2[2]);
 }
 
+//点乘
 double PnPsolver::dot(const double * v1, const double * v2)
 {
   return v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
 }
 
+//估算R和t后用它们求三维的投影到二维图像的坐标差
 double PnPsolver::reprojection_error(const double R[3][3], const double t[3])
 {
   double sum2 = 0.0;
@@ -566,6 +607,7 @@ double PnPsolver::reprojection_error(const double R[3][3], const double t[3])
   return sum2 / number_of_correspondences;
 }
 
+//已知参考点世界坐标和相机坐标估算R和t的核心函数
 void PnPsolver::estimate_R_and_t(double R[3][3], double t[3])
 {
   double pc0[3], pw0[3];
@@ -573,6 +615,7 @@ void PnPsolver::estimate_R_and_t(double R[3][3], double t[3])
   pc0[0] = pc0[1] = pc0[2] = 0.0;
   pw0[0] = pw0[1] = pw0[2] = 0.0;
 
+  //把参考点坐标求平均值放入pc0和pw0
   for(int i = 0; i < number_of_correspondences; i++) {
     const double * pc = pcs + 3 * i;
     const double * pw = pws + 3 * i;
@@ -633,8 +676,10 @@ void PnPsolver::print_pose(const double R[3][3], const double t[3])
   cout << R[2][0] << " " << R[2][1] << " " << R[2][2] << " " << t[2] << endl;
 }
 
+//让所有点坐标落在相机坐标z轴正方向
 void PnPsolver::solve_for_sign(void)
 {
+	//这里pcs第三个值小于0就是z轴反了，所有点都要反过来
   if (pcs[2] < 0.0) {
     for(int i = 0; i < 4; i++)
       for(int j = 0; j < 3; j++)
@@ -648,6 +693,7 @@ void PnPsolver::solve_for_sign(void)
   }
 }
 
+//计算R和t，输入文档里的vi和β，输出R和t
 double PnPsolver::compute_R_and_t(const double * ut, const double * betas,
 			     double R[3][3], double t[3])
 {
@@ -663,7 +709,7 @@ double PnPsolver::compute_R_and_t(const double * ut, const double * betas,
 
 // betas10        = [B11 B12 B22 B13 B23 B33 B14 B24 B34 B44]
 // betas_approx_1 = [B11 B12     B13         B14]
-
+//算N=4？
 void PnPsolver::find_betas_approx_1(const CvMat * L_6x10, const CvMat * Rho,
 			       double * betas)
 {
@@ -695,7 +741,7 @@ void PnPsolver::find_betas_approx_1(const CvMat * L_6x10, const CvMat * Rho,
 
 // betas10        = [B11 B12 B22 B13 B23 B33 B14 B24 B34 B44]
 // betas_approx_2 = [B11 B12 B22                            ]
-
+//算N=2的β
 void PnPsolver::find_betas_approx_2(const CvMat * L_6x10, const CvMat * Rho,
 			       double * betas)
 {
@@ -727,7 +773,7 @@ void PnPsolver::find_betas_approx_2(const CvMat * L_6x10, const CvMat * Rho,
 
 // betas10        = [B11 B12 B22 B13 B23 B33 B14 B24 B34 B44]
 // betas_approx_3 = [B11 B12 B22 B13 B23                    ]
-
+//求N=3的β
 void PnPsolver::find_betas_approx_3(const CvMat * L_6x10, const CvMat * Rho,
 			       double * betas)
 {
@@ -761,6 +807,7 @@ void PnPsolver::compute_L_6x10(const double * ut, double * l_6x10)
 {
   const double * v[4];
 
+  //取ut最后四行
   v[0] = ut + 12 * 11;
   v[1] = ut + 12 * 10;
   v[2] = ut + 12 *  9;
@@ -981,6 +1028,7 @@ void PnPsolver::relative_error(double & rot_err, double & transl_err,
     sqrt(ttrue[0] * ttrue[0] + ttrue[1] * ttrue[1] + ttrue[2] * ttrue[2]);
 }
 
+//四元数转换
 void PnPsolver::mat_to_quat(const double R[3][3], double q[4])
 {
   double tr = R[0][0] + R[1][1] + R[2][2];
