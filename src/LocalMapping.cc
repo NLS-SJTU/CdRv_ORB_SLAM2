@@ -51,7 +51,7 @@ void LocalMapping::Run()
 {
 
     mbFinished = false;
-//死循环，线程开启后循环执行
+    //死循环，线程开启后循环执行
     while(1)
     {
         // Tracking will see that Local Mapping is busy
