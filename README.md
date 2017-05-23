@@ -16,6 +16,11 @@ A Chinese documentation is presented by all reviewers with the seminar procedure
 
 
 ## Procedure
+**20170519** Presentations: Tracking by Zhantao, Localmapping by Ruihang.
+遗留问题：
+#1 Localmapping中对于三角化方面代码的细节原理，可以附上有用的资料链接等
+#2 Tracking模块是ORBSLAM的核心，也是最难的部分。对于Tracking模块，可以进一步细化。除了利用motion model和reference keyframe进行下一帧姿态估计这个点我听懂了之外，其他的点和细节我个人还应该加强学习。
+
 **20170512** Presentations: KeyFrames by Rongzhi, g2o by Zheng.
 遗留问题：
 #1 KeyFrames的建立，删除的标准是什么，在什么情况执行。地图三位点的增删标准。
