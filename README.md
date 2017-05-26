@@ -16,6 +16,11 @@ A Chinese documentation is presented by all reviewers with the seminar procedure
 
 
 ## Procedure
+**20170526** Presentations: DBow3 by Xushen, EPnP by Wuyang.
+遗留问题：
+#1 DBow中对于计算bow vector之间分数差距的方法应该更详细
+#2 DBow中对于feature vector没有介绍
+
 **20170519** Presentations: Tracking by Zhantao, Localmapping by Ruihang.
 遗留问题：
 #1 Localmapping中对于三角化方面代码的细节原理，可以附上有用的资料链接等
